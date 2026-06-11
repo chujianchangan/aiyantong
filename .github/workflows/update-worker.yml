@@ -23,11 +23,11 @@ jobs:
         run: |
           echo -e "\033[34m[获取本地版本]\033[0m"
           if [ -f version.txt ]; then
-            LOCAL_VERSION=$(cat version.txt)
+            LOCAL_VERSION=$(cat version.txt | tr -d '[:space:]')
             echo "当前本地版本: $LOCAL_VERSION"
           else
             echo "首次同步，没有本地版本。"
-            LOCAL_VERSION=""
+            LOCAL_VERSION="v0.0.0"
           fi
           echo "LOCAL_VERSION=$LOCAL_VERSION" >> $GITHUB_ENV
 
@@ -38,7 +38,7 @@ jobs:
           API_URL="https://api.github.com/repos/bia-pain-bache/BPB-Worker-Panel/releases"
           RESPONSE=$(curl -s "$API_URL")
           LATEST_RELEASE=$(echo "$RESPONSE" | jq -r '.[0]')
-          TAG_NAME=$(echo "$LATEST_RELEASE" | jq -r '.tag_name')
+          TAG_NAME=$(echo "$LATEST_RELEASE" | jq -r '.tag_name' | tr -d '[:space:]')
           DOWNLOAD_URL=$(echo "$LATEST_RELEASE" | jq -r '.assets[] | select(.name == "worker.zip") | .browser_download_url')
 
           if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" == "null" ]; then
@@ -54,7 +54,10 @@ jobs:
         id: check_update
         run: |
           echo -e "\033[34m[判断是否需要更新]\033[0m"
-          if [ "$LOCAL_VERSION" = "$TAG_NAME" ]; then
+          echo "本地版本: ${{ env.LOCAL_VERSION }}"
+          echo "远程版本: ${{ env.TAG_NAME }}"
+          
+          if [ "${{ env.LOCAL_VERSION }}" = "${{ env.TAG_NAME }}" ]; then
             echo -e "\033[32m已经是最新版本，无需更新。\033[0m"
             echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
           else
@@ -65,16 +68,21 @@ jobs:
       - name: 如果需要，清理旧文件并下载新版本
         if: env.UPDATE_NEEDED == 'true'
         run: |
-          echo -e "\033[34m[清理旧文件]\033[0m"
-          rm -rf ./*
+          echo -e "\033[34m[清理旧文件（保留自动化脚本）]\033[0m"
+          # 使用 find 干净地删除当前目录下除 .git 和 .github 以外的所有文件
+          find . -maxdepth 1 ! -name '.' ! -name '.git' ! -name '.github' -exec rm -rf {} +
+          
           echo -e "\033[34m[下载最新 worker.zip]\033[0m"
-          wget -O worker.zip "$DOWNLOAD_URL"
+          wget -O worker.zip "${{ env.DOWNLOAD_URL }}"
+          
           echo -e "\033[34m[解压 worker.zip]\033[0m"
           unzip worker.zip
+          
           echo -e "\033[34m[删除 worker.zip]\033[0m"
-          rm worker.zip
+          rm -f worker.zip
+          
           echo -e "\033[34m[记录新版本号]\033[0m"
-          echo "$TAG_NAME" > version.txt
+          echo "${{ env.TAG_NAME }}" > version.txt
 
       - name: 提交更改
         if: env.UPDATE_NEEDED == 'true'
